@@ -1,0 +1,15 @@
+Use Out-of-sample6-FUNCTIONS_loop_regionruralgrowth
+to estimate specification. 
+
+but before run need to add a directory with unique id that has a xls sheeat with all the regional groups listed
+
+above also estiamtes and saves all regressions and writes individual shp files for each region
+
+above also creates median coeffiencient, pvalues rsq etc 
+
+
+Use Out-of-sample6_All_Combine to create one combined .shp file with all regions
+
+Use Out-of-sample6-ScenarioBuilder (scenario D I believe) to estimate rural and urban scenarios
+
+Use Out-of-sample6-Paper Visualizations to create all graphics

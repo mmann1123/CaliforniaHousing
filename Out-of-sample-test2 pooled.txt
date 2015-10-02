@@ -1,0 +1,285 @@
+  called by spmlXX for pooled and error 
+
+spremlXX <- function (formula, data, index = NULL, w, w2 = w, lag = FALSE, 
+    errors = c("semsrre", "semsr", "srre", "semre", "re", "sr", 
+        "sem", "ols", "sem2re"), pvar = FALSE, hess = FALSE, 
+    quiet = TRUE, initval = c("zeros", "estimate"), x.tol = 1.5e-18, 
+    rel.tol = 1e-15, cl = NULL, ...) 
+{
+    trace <- as.numeric(!quiet)
+    if (pvar) 
+        print("<implement pvar>")
+    if (!is.null(index)) {
+        require(plm)
+        data <- plm.data(data, index)
+        dataXX <- plm.data(dataXX, index)  
+    }
+    index <- data[, 1]
+    tindex <- data[, 2]
+    indexXX <- dataXX[, 1]
+    tindexXX <- dataXX[, 2]
+    if (is.null(cl)) 
+        cl <- match.call()
+    require(nlme)
+    if (!is.matrix(w)) {
+        if ("listw" %in% class(w)) {
+            require(spdep)
+            w <- listw2mat(w)
+        }
+        else {
+            stop("w has to be either a 'matrix' or a 'listw' object")
+        }
+    }
+    if (dim(data)[[1]] != length(index)) 
+        stop("Non conformable arguments")
+    if (dim(dataXX)[[1]] != length(indexXX)) 
+        stop("Non conformable arguments")
+    X <- model.matrix(formula, data = data)
+    y <- model.response(model.frame(formula, data = data))
+    xXX <- model.matrix(formula, data = dataXX)
+    yXX <- model.response(model.frame(formula, data = dataXX))
+    names(index) <- row.names(data)
+    names(indexXX) <- row.names(dataXX)
+
+
+
+    #### create listwXX for block data excluding na's
+    datawideXX = reshape(dataXX, idvar="id", timevar="time", direction="wide")
+    ider = strsplit(row.names(xXX), split="-")
+    ider = unique(as.vector(unlist(lapply(1:length(ider), function (x) ider[[x]][1]))))   # unique ids
+    ider.SUM090 = datawideXX$SUM090.49[datawideXX$id %in% ider]
+
+    Block.39_sp_ider = Block.39.ex[Block.39.ex$SUM090 %in% ider.SUM090,]    
+    listwXX = theneigh(Block.39_sp_ider)
+    wXX <- listw2mat(listwXX )
+
+
+    ind <- index[which(names(index) %in% row.names(X))]
+    indXX <- indexXX[which(names(indexXX) %in% row.names(xXX))]    #helps remove NAs
+    tind <- tindex[which(names(index) %in% row.names(X))]
+    tindXX <- tindexXX[which(names(indexXX) %in% row.names(xXX))]
+    oo <- order(tind, ind)
+    ooXX <- order(tindXX, indXX)
+    X <- X[oo, ]
+    xXX <- xXX[ooXX, ]
+    y <- y[oo]
+    yXX <- yXX[ooXX]
+
+    ind <- ind[oo]
+    indXX <- indXX[ooXX]
+    tind <- tind[oo]
+    tindXX <- tindXX[ooXX]
+    n <- length(unique(ind))
+    nXX <- length(unique(indXX))
+    k <- dim(X)[[2]]
+    kXX <- dim(XXX)[[2]]
+    t <-   max(tapply(X[, 1], ind, length))
+    tXX <- max(tapply(xXX[, 1], indXX, length), na.rm=T)      #, na.rm=Tassumes its balanced should be fine   
+    nT <- length(ind)
+    nTXX <- length(indXX)
+    if (dim(w)[[1]] != n) 
+        stop("Non conformable spatial weights")
+    if (dim(wXX)[[1]] != nXX) 
+        stop("Non conformable spatial weights XX")
+
+    balanced <- n * t == nT
+    if (!balanced) 
+        stop("Estimation method unavailable for unbalanced panels")
+    balanced <- nXX * tXX == nTXX
+    if (!balanced) 
+        stop("Estimation method unavailable for unbalanced panels XX")
+
+    sv.length <- switch(match.arg(errors), semsrre = 3, semsr = 2, 
+        srre = 2, semre = 2, re = 1, sr = 1, sem = 1, ols = 0, 
+        sem2re = 2)
+    errors. <- match.arg(errors)
+    if (is.numeric(initval)) {
+        if (length(initval) != sv.length) {
+            stop("Incorrect number of initial values supplied for error vcov parms")
+        }
+        coef0 <- initval
+    }
+    else {
+        switch(match.arg(initval), zeros = {
+            coef0 <- rep(0, sv.length)
+        }, estimate = {
+            if (nchar(errors.) < 4) {
+                stop("Pre-estimation of unique vcov parm is meaningless: \n please select (default) option 'zeros' or supply a scalar")
+            }
+            coef0 <- NULL
+            if (grepl("re", errors.)) {
+                REmodel <- REmod(X, y, ind, tind, n, k, t, nT, 
+                  w, coef0 = 0, hess = FALSE, trace = trace, 
+                  x.tol = 1.5e-18, rel.tol = 1e-15, ...)
+                coef0 <- c(coef0, REmodel$errcomp)
+            }
+            if (grepl("sr", errors.)) {
+                ARmodel <- ssrmod(X, y, ind, tind, n, k, t, nT, 
+                  w, coef0 = 0, hess = FALSE, trace = trace, 
+                  x.tol = 1.5e-18, rel.tol = 1e-15, ...)
+                coef0 <- c(coef0, ARmodel$errcomp)
+            }
+            if (grepl("sem", errors.)) {
+                SEMmodel <- semmod(X, y, ind, tind, n, k, t, 
+                  nT, w, coef0 = 0, hess = FALSE, trace = trace, 
+                  x.tol = 1.5e-18, rel.tol = 1e-15, ...)
+                coef0 <- c(coef0, SEMmodel$errcomp)
+            }
+        })
+    }
+    if (lag) {
+	# i think this switchs  RES<-est.fun to RES<-sarmod etc
+        est.fun <- switch(match.arg(errors), semsrre = {
+            saremsrREmod
+        }, semsr = {
+            saremsrmod
+        }, srre = {
+            sarsrREmod
+        }, semre = {
+            saremREmod
+        }, re = {
+            sarREmod
+        }, sr = {
+            sarsrmod
+        }, sem = {
+            saremmod
+	    # errors = "none" switched to ols
+        }, ols = {
+            sarmodXX
+        }, sem2re = {
+            sarem2REmod
+        })
+        coef0 <- c(coef0, 0)
+    }
+    else {
+        est.fun <- switch(match.arg(errors), semsrre = {
+            semsrREmod
+        }, semsr = {
+            semsrmod
+        }, srre = {
+            ssrREmod
+        }, semre = {
+            semREmod
+        }, re = {
+            REmod
+        }, sr = {
+            ssrmod
+        }, sem = {
+            semmod
+        }, ols = {
+            olsmod
+        }, sem2re = {
+            sem2REmod
+        })
+        arcoef <- NULL
+    }
+    RES <- est.fun(X, y, ind, tind, n, k, t, nT, w = w, w2 = w2, 
+        coef0 = coef0, hess = hess, trace = trace, x.tol = x.tol, 
+        rel.tol = rel.tol)
+    y.hat <- as.vector(X %*% RES$betas)
+    y.hatXX <- as.vector(XXX %*% RES$betas)
+    res <- y - y.hat
+    resXX <- yXX - y.hatXX
+    nam.rows <- dimnames(X)[[1]]
+    names(y.hat) <- nam.rows
+    names(res) <- nam.rows
+    nam.rowsXX <- dimnames(XXX)[[1]]
+    names(y.hatXX) <- nam.rowsXX
+    names(resXX) <- nam.rowsXX
+
+    model.data <- data.frame(cbind(y, X[, -1]))
+    model.dataXX <- data.frame(cbind(yXX, XXX[, -1]))
+    dimnames(model.data)[[1]] <- nam.rows
+    dimnames(model.dataXX)[[1]] <- nam.rowsXX
+    type <- "random effects ML"
+    sigma2 <- list(one = 3, idios = 2, id = 1)
+    spmod <- list(coefficients = RES$betas, arcoef = RES$arcoef, 
+        errcomp = RES$errcomp, vcov = RES$covB, vcov.arcoef = RES$covAR, 
+        vcov.errcomp = RES$covPRL, residuals = res,  residualsXX = resXX,
+	fitted.valuesXX = y.hatXX, 
+        sigma2 = sigma2, model = model.data, type = type, call = cl, 
+        errors = errors, logLik = RES$ll)
+    class(spmod) <- "splm"
+    return(spmod)
+}
+
+
+
+
+sarmodXX <- function (X, y, ind, tind, n, k, t, nT, w, w2, coef0 = 0, hess = FALSE, 
+    trace = trace, x.tol = 1.5e-18, rel.tol = 1e-15, ...) 
+{
+    nam.beta <- dimnames(X)[[2]]
+    nam.betaXX <- dimnames(XXX)[[2]]
+    nam.errcomp <- c("lambda")
+    myparms0 <- coef0
+    lower.bounds <- c(-0.999)
+    upper.bounds <- c(0.999)
+    B <- function(lambda, w) diag(1, ncol(w)) - lambda * w
+    detB <- function(lambda, w) det(B(lambda, w))
+    ll.c <- function(phipsi, y, X, n, t, w, w2, wy) {
+        psi <- phipsi
+        Ay <- y - psi * wy
+        glsres <- OLSstep(X, Ay)
+        e <- glsres[["ehat"]]
+        s2e <- glsres[["sigma2"]]
+        zero <- t * log(detB(psi, w2))
+        due <- 0
+        tre <- -n * t/2 * log(s2e)
+        quattro <- -1/(2 * s2e) * crossprod(e)
+        const <- -(n * t)/2 * log(2 * pi)
+        ll.c <- const + zero + due + tre + quattro
+        llc <- -ll.c
+    }
+    Wy <- function(y, w, tind) {
+        wy <- list()
+        for (j in 1:length(unique(tind))) {
+            yT <- y[tind == unique(tind)[j]]
+            wy[[j]] <- w %*% yT
+        }
+        return(unlist(wy))
+
+    WyXX <- function(yXX, wXX, tindXX) {
+        wyXX <- list()
+        for (j in 1:length(unique(tindXX))) {
+            yTXX <- yXX[tindXX == unique(tindXX)[j]]
+            wyXX[[j]] <- wXX %*% yTXX
+        }
+        return(unlist(wyXX))
+
+    }
+    OLSstep <- function(X, y) {
+        b.hat <- solve(crossprod(X), crossprod(X, y))
+        ehat <- y - X %*% b.hat
+        sigma2ehat <- crossprod(ehat)/(n * t)
+        return(list(betahat = b.hat, ehat = ehat, sigma2 = sigma2ehat))
+    }
+    wy <- Wy(y, w2, tind)
+    wyXX <- WyXX(yXX, w2XX, tindXX)
+    optimum <- nlminb(start = myparms0, objective = ll.c, gradient = NULL, 
+        hessian = NULL, y = y, X = X, n = n, t = t, w = w, w2 = w2, 
+        wy = wy, scale = 1, control = list(x.tol = x.tol, rel.tol = rel.tol, 
+            trace = trace), lower = lower.bounds, upper = upper.bounds)
+    myll <- -optimum$objective
+    myparms <- optimum$par
+    Ay <- y - myparms[length(myparms)] * wy
+    beta <- OLSstep(X, Ay)
+    covB <- as.numeric(beta[[3]]) * solve(crossprod(X))
+    covTheta <- solve(-fdHess(myparms, function(x) -ll.c(x, y, 
+        X, n, t, w, w2, wy))$Hessian)
+    nvcovpms <- length(nam.errcomp) - 1
+    covAR <- covTheta[nvcovpms + 1, nvcovpms + 1, drop = FALSE]
+    covPRL <- NULL
+    betas <- as.vector(beta[[1]])
+    arcoef <- myparms[which(nam.errcomp == "lambda")]
+    errcomp <- NULL
+    names(betas) <- nam.beta
+    names(arcoef) <- "lambda"
+    dimnames(covB) <- list(nam.beta, nam.beta)
+    dimnames(covAR) <- list(names(arcoef), names(arcoef))
+	# returns to spreml 
+    RES <- list(betas = betas, arcoef = arcoef, errcomp = errcomp, 
+        covB = covB, covAR = covAR, covPRL = covPRL, ll = myll)
+    return(RES)
+}
+
